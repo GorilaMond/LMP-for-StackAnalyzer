@@ -38,13 +38,13 @@
 /// @param name 新散列表的名字
 /// @param type1 键的类型
 /// @param type2 值的类型
-#define BPF_HASH(name, type1, type2)       \
-    struct                                 \
-    {                                      \
-        __uint(type, BPF_MAP_TYPE_HASH);   \
-        __uint(key_size, sizeof(type1));   \
-        __uint(value_size, sizeof(type2)); \
-        __uint(max_entries, MAX_ENTRIES);  \
+#define BPF_HASH(name, type1, type2)      \
+    struct                                \
+    {                                     \
+        __uint(type, BPF_MAP_TYPE_HASH);  \
+        __type(key, type1);               \
+        __type(value, type2);             \
+        __uint(max_entries, MAX_ENTRIES); \
     } name SEC(".maps")
 
 /**
@@ -105,20 +105,20 @@
  * 并且不能比success_memorder更严格。
  */
 #define CHECK_FREQ(_ts)                               \
-    if (freq)                                         \
-    {                                                 \
-        __next_n = (_ts * freq) >> 30;                \
-        if (__atomic_compare_exchange_n(              \
-                &__next_n, &__last_n, __next_n, true, \
-                __ATOMIC_RELAXED, __ATOMIC_RELAXED))  \
-            return 0;                                 \
-    }
+    // if (freq)                                         \
+    // {                                                 \
+    //     __next_n = (_ts * freq) >> 30;                \
+    //     if (__atomic_compare_exchange_n(              \
+    //             &__next_n, &__last_n, __next_n, true, \
+    //             __ATOMIC_RELAXED, __ATOMIC_RELAXED))  \
+    //         return 0;                                 \
+    // }
 
 #define GET_CURR \
     (struct task_struct *)bpf_get_current_task()
 
 // 如果没有设置目标进程，则检查被采集进程是否为内核线程，是则退出采集
-#define CHECK_KTHREAD(_task)                                     \
+#define CHECK_KTHREAD(_task)                                      \
     if (!target_tgid && BPF_CORE_READ(_task, flags) & PF_KTHREAD) \
         return 0;
 
@@ -129,8 +129,8 @@
 #define GET_KNODE(_task) \
     BPF_CORE_READ(_task, cgroups, dfl_cgrp, kn)
 
-#define CHECK_CGID(_knode)                                                   \
-    if (target_cgroupid > 0 && BPF_CORE_READ(_knode, id) != target_cgroupid) \
+#define CHECK_CGID(_knode)                                                      \
+    if (target_cgroupid > 0 && BPF_CORE_READ(_knode, id.id) != target_cgroupid) \
         return 0;
 
 #define TRY_SAVE_INFO(_task, _pid, _tgid, _knode)                                                  \
