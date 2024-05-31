@@ -47,38 +47,73 @@ StackCollector::StackCollector()
     self_tgid = getpid();
 };
 
+// std::vector<CountItem> *StackCollector::sortedCountList(void)
+// {
+//     auto psid_count_map = bpf_object__find_map_by_name(obj, "psid_count_map");
+//     auto val_size = bpf_map__value_size(psid_count_map);
+//     auto value_fd = bpf_object__find_map_fd_by_name(obj, "psid_count_map");
+
+//     auto keys = new psid[MAX_ENTRIES];
+//     auto vals = new char[MAX_ENTRIES * val_size];
+//     uint32_t count = MAX_ENTRIES;
+//     const psid orig_key = {0};
+//     psid next_key, prev_key;
+//     int err;
+//     if (bpf_map_get_next_key(value_fd, &orig_key, &next_key))
+//         return NULL;
+//     printf("psid.pid = %d, psid.ksid = %d, psid.usid = %d\n", next_key.pid, next_key.ksid, next_key.usid);
+//     prev_key = next_key;
+
+//     if (showDelta)
+//         err = bpf_map_lookup_and_delete_batch(value_fd, &prev_key, &next_key, keys, vals, &count, NULL);
+//     else
+//         err = bpf_map_lookup_batch(value_fd, &prev_key, &next_key, keys, vals, &count, NULL);
+
+//     if (err == EFAULT)
+//         return NULL;
+
+//     auto D = new std::vector<CountItem>();
+//     for (uint32_t i = 0; i < count; i++)
+//     {
+//         CountItem d(keys[i], count_values(vals + val_size * i));
+//         D->insert(std::lower_bound(D->begin(), D->end(), d), d);
+//     }
+//     delete[] keys;
+//     delete[] vals;
+//     return D;
+// };
+
 std::vector<CountItem> *StackCollector::sortedCountList(void)
 {
     auto psid_count_map = bpf_object__find_map_by_name(obj, "psid_count_map");
     auto val_size = bpf_map__value_size(psid_count_map);
     auto value_fd = bpf_object__find_map_fd_by_name(obj, "psid_count_map");
 
-    auto keys = new psid[MAX_ENTRIES];
-    auto vals = new char[MAX_ENTRIES * val_size];
-    uint32_t count = MAX_ENTRIES;
-    psid next_key;
-    int err;
-    if (showDelta)
-    {
-        err = bpf_map_lookup_and_delete_batch(value_fd, NULL, &next_key, keys, vals, &count, NULL);
-    }
-    else
-    {
-        err = bpf_map_lookup_batch(value_fd, NULL, &next_key, keys, vals, &count, NULL);
-    }
-    if (err == EFAULT)
-    {
-        return NULL;
-    }
-
     auto D = new std::vector<CountItem>();
-    for (uint32_t i = 0; i < count; i++)
+    for (psid prev_key = {0}, curr_key = {0};; prev_key = curr_key)
     {
-        CountItem d(keys[i], count_values(vals + val_size * i));
+        if (bpf_map_get_next_key(value_fd, &prev_key, &curr_key))
+        {
+            if (errno != ENOENT)
+                perror("map get next key error");
+            break; // no more keys, done
+        }
+        if (showDelta)
+            bpf_map_delete_elem(value_fd, &prev_key);
+        char val[val_size];
+        memset(val, val_size, 0);
+        if (bpf_map_lookup_elem(value_fd, &curr_key, &val))
+        {
+            if (errno != ENOENT)
+            {
+                perror("map lookup error");
+                break;
+            }
+            continue;
+        }
+        CountItem d(curr_key, count_values(val));
         D->insert(std::lower_bound(D->begin(), D->end(), d), d);
     }
-    delete[] keys;
-    delete[] vals;
     return D;
 };
 
